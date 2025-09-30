@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Vector3 } from 'three';
 import * as PF from 'pathfinding';
+import { useSocket } from '../contexts/SocketContext';
 import SimpleAnimatedCharacter from './SimpleAnimatedCharacter';
 import Obstacles from './Obstacles';
 
@@ -20,7 +21,8 @@ const GRID_SIZE = 60; // Grid resolution for pathfinding (higher for smoother di
 const SHOW_DEBUG_GRID = true; // Set to true to visualize pathfinding grid
 
 const Room: React.FC = () => {
-  // useThree hook available if needed for camera/scene access
+  const { currentPlayer, otherPlayers, sendMovement, sendStop, isConnected } = useSocket();
+  
   const [characterPosition, setCharacterPosition] = useState<Vector3>(new Vector3(0, 0.5, 0));
   const [targetPosition, setTargetPosition] = useState<Vector3 | null>(null);
   const [path, setPath] = useState<Vector3[]>([]);
@@ -110,6 +112,11 @@ const Room: React.FC = () => {
       setPath(worldPath);
       setTargetPosition(clampedPoint);
       setIsMoving(true);
+      
+      // Send movement to other players
+      if (isConnected) {
+        sendMovement(characterPosition, worldPath);
+      }
     }
   };
 
@@ -140,9 +147,28 @@ const Room: React.FC = () => {
           setPath([]);
           if (targetPosition) {
             setCharacterPosition(targetPosition);
+            // Send stop event to other players
+            if (isConnected) {
+              sendStop(targetPosition);
+            }
           }
         }}
+        color={currentPlayer?.color}
+        name={currentPlayer?.name}
       />
+
+      {/* Other Players */}
+      {Array.from(otherPlayers.values()).map(player => (
+        <SimpleAnimatedCharacter
+          key={player.id}
+          position={new Vector3(player.position.x, player.position.y, player.position.z)}
+          path={player.path}
+          isMoving={player.isMoving}
+          onMoveComplete={() => {}} // Other players handle their own completion
+          color={player.color}
+          name={player.name}
+        />
+      ))}
 
       {/* Path visualization (optional - shows the calculated path) */}
       {path.length > 1 && (

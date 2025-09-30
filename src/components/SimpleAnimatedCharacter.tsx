@@ -7,13 +7,17 @@ interface SimpleAnimatedCharacterProps {
   path: Vector3[];
   isMoving: boolean;
   onMoveComplete: () => void;
+  color?: string;
+  name?: string;
 }
 
 const SimpleAnimatedCharacter: React.FC<SimpleAnimatedCharacterProps> = ({ 
   position, 
   path, 
   isMoving, 
-  onMoveComplete 
+  onMoveComplete,
+  color = '#3498db',
+  name = 'Player'
 }) => {
   const groupRef = useRef<Group>(null);
   const [currentPathIndex, setCurrentPathIndex] = useState(0);
@@ -101,7 +105,7 @@ const SimpleAnimatedCharacter: React.FC<SimpleAnimatedCharacterProps> = ({
       {/* Body */}
       <mesh position={[idleSway, 1 + walkBob + idleBreathe, 0]} castShadow>
         <capsuleGeometry args={[0.3, 0.8]} />
-        <meshLambertMaterial color="#3498db" />
+        <meshLambertMaterial color={color} />
       </mesh>
       
       {/* Head */}
@@ -162,6 +166,18 @@ const SimpleAnimatedCharacter: React.FC<SimpleAnimatedCharacterProps> = ({
       <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[0.4]} />
         <meshBasicMaterial color="#000000" opacity={0.2} transparent />
+      </mesh>
+      
+      {/* Floating name label */}
+      <mesh position={[idleSway, 2.5 + walkBob + idleBreathe, 0]}>
+        <planeGeometry args={[1, 0.3]} />
+        <meshBasicMaterial color="#ffffff" opacity={0.8} transparent />
+      </mesh>
+      
+      {/* Name text placeholder (visual indicator) */}
+      <mesh position={[idleSway, 2.6 + walkBob + idleBreathe, 0]}>
+        <boxGeometry args={[0.8, 0.1, 0.02]} />
+        <meshBasicMaterial color={color} />
       </mesh>
     </group>
   );
