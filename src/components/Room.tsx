@@ -23,6 +23,12 @@ const SHOW_DEBUG_GRID = true; // Set to true to visualize pathfinding grid
 const Room: React.FC = () => {
   const { currentPlayer, otherPlayers, sendMovement, sendStop, isConnected } = usePusher();
   
+  // Debug logging for multiplayer state
+  console.log('🎮 Room render - Other players count:', otherPlayers.size);
+  console.log('🎮 Room render - Other players:', Array.from(otherPlayers.entries()));
+  console.log('🎮 Room render - Current player:', currentPlayer);
+  console.log('🎮 Room render - Is connected:', isConnected);
+  
   const [characterPosition, setCharacterPosition] = useState<Vector3>(new Vector3(0, 0.5, 0));
   const [targetPosition, setTargetPosition] = useState<Vector3 | null>(null);
   const [path, setPath] = useState<Vector3[]>([]);
@@ -121,7 +127,19 @@ const Room: React.FC = () => {
   };
 
   return (
-    <group>
+    <>
+      {/* Debug Info */}
+      <mesh position={[-9, 8, 0]}>
+        <planeGeometry args={[4, 1]} />
+        <meshBasicMaterial color="#000000" opacity={0.7} transparent />
+      </mesh>
+      {/* Text would go here in a real implementation, for now just a visual indicator */}
+      <mesh position={[-9, 8, 0.1]}>
+        <boxGeometry args={[0.2 * (otherPlayers.size + 1), 0.2, 0.02]} />
+        <meshBasicMaterial color={isConnected ? '#00ff00' : '#ff0000'} />
+      </mesh>
+      
+      <group>
       {/* Floor */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
@@ -221,7 +239,8 @@ const Room: React.FC = () => {
           ).flat()}
         </group>
       )}
-    </group>
+      </group>
+    </>
   );
 };
 

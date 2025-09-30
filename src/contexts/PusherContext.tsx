@@ -15,8 +15,8 @@ interface PusherContextType {
   currentPlayer: Player | null;
   otherPlayers: Map<string, Player>;
   isConnected: boolean;
-  sendMovement: (position: Vector3, path: Vector3[]) => void;
-  sendStop: (position: Vector3) => void;
+  sendMovement: (position: Vector3, path: Vector3[]) => Promise<void>;
+  sendStop: (position: Vector3) => Promise<void>;
   memberCount: number;
 }
 
@@ -24,8 +24,8 @@ const PusherContext = createContext<PusherContextType>({
   currentPlayer: null,
   otherPlayers: new Map(),
   isConnected: false,
-  sendMovement: () => {},
-  sendStop: () => {},
+  sendMovement: async () => {},
+  sendStop: async () => {},
   memberCount: 0
 });
 
@@ -55,19 +55,21 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
   const [otherPlayers, setOtherPlayers] = useState<Map<string, Player>>(new Map());
   const [isConnected, setIsConnected] = useState(false);
   const [memberCount, setMemberCount] = useState(0);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     // Use environment variables for Pusher credentials
-    const pusherKey = process.env.REACT_APP_PUSHER_KEY;
-    const pusherCluster = process.env.REACT_APP_PUSHER_CLUSTER;
+    const pusherKey = process.env.NEXT_PUBLIC_PUSHER_KEY;
+    const pusherCluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
     
     if (!pusherKey || !pusherCluster) {
-      console.error('Pusher credentials missing! Please set REACT_APP_PUSHER_KEY and REACT_APP_PUSHER_CLUSTER in your .env file');
+      console.error('Pusher credentials missing! Please set NEXT_PUBLIC_PUSHER_KEY and NEXT_PUBLIC_PUSHER_CLUSTER in your .env file');
       return;
     }
     
     const pusherInstance = new Pusher(pusherKey, {
-      cluster: pusherCluster
+      cluster: pusherCluster,
+      authEndpoint: '/api/pusher/auth'
     });
 
     setPusher(pusherInstance);
@@ -76,19 +78,6 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
     pusherInstance.connection.bind('connected', () => {
       console.log('Connected to Pusher');
       setIsConnected(true);
-      
-      // Create current player when connected
-      const socketId = pusherInstance.connection.socket_id || 'unknown';
-      const playerColor = characterColors[socketId.hashCode() % characterColors.length];
-      const player: Player = {
-        id: socketId,
-        position: { x: 0, y: 0.5, z: 0 },
-        color: playerColor,
-        isMoving: false,
-        path: [],
-        name: `Player ${socketId.substring(0, 6)}`
-      };
-      setCurrentPlayer(player);
     });
 
     pusherInstance.connection.bind('disconnected', () => {
@@ -96,86 +85,190 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
       setIsConnected(false);
     });
 
-    // Subscribe to the regular channel for the 3D room
-    const roomChannel = pusherInstance.subscribe('3d-room');
+    // Subscribe to the presence channel for the 3D room
+    console.log('🔄 Attempting to subscribe to presence-3d-room channel...');
+    console.log('🔑 Using auth endpoint:', '/api/pusher/auth');
+    
+    const roomChannel = pusherInstance.subscribe('presence-3d-room');
     setChannel(roomChannel);
+    
+    // Add generic error handler for the channel
+    roomChannel.bind('pusher:subscription_error', (error: any) => {
+      console.error('❌ Presence channel subscription error:', error);
+      console.error('❌ Error details:', JSON.stringify(error, null, 2));
+    });
+    
+    // Add more detailed connection debugging
+    pusherInstance.connection.bind('error', (error: any) => {
+      console.error('❌ Pusher connection error:', error);
+    });
+    
+    pusherInstance.connection.bind('state_change', (states: any) => {
+      console.log('🔄 Pusher connection state change:', states.previous, '→', states.current);
+    });
 
-    // Handle successful subscription
-    roomChannel.bind('pusher:subscription_succeeded', () => {
-      console.log('Successfully subscribed to 3D room');
+    // Handle successful subscription to presence channel  
+    // Debug: Log all incoming events
+    roomChannel.bind_global((eventName: string, data: any) => {
+      console.log('📡 Received event:', eventName, data);
+    });
+    
+    roomChannel.bind('pusher:subscription_succeeded', (members: any) => {
+      console.log('🎉 Successfully subscribed to presence 3D room!');
+      console.log('📊 Full members object:', members);
+      console.log('📊 Member count:', members?.count);
+      console.log('📊 Members:', members?.members);
+      console.log('🗺️ My socket ID:', pusherInstance.connection.socket_id);
       
-      // Announce joining after successful subscription
-      if (currentPlayer) {
-        roomChannel.trigger('client-player-joined', {
-          playerId: currentPlayer.id,
-          playerData: currentPlayer
+      // Create current player when subscription is ready
+      const socketId = pusherInstance.connection.socket_id || 'unknown';
+      
+      // Extract current user's ID from presence channel membership
+      let myUserId = socketId; // Fallback to socket ID
+      if (members && members.members) {
+        // Find the member entry that matches our socket (it should be the one we just joined)
+        const memberEntries = Object.entries(members.members);
+        const myMemberEntry = memberEntries.find(([memberId, memberInfo]) => 
+          memberEntries.length === 1 || memberId !== socketId
+        );
+        if (myMemberEntry) {
+          myUserId = myMemberEntry[0];
+          console.log('🆔 Found my user ID in members:', myUserId);
+        }
+      }
+      
+      setCurrentUserId(myUserId);
+      console.log('🆔 Current user ID set to:', myUserId);
+      
+      const playerColor = characterColors[socketId.hashCode() % characterColors.length];
+      const player: Player = {
+        id: myUserId, // Use presence channel user ID
+        position: { x: 0, y: 0.5, z: 0 },
+        color: playerColor,
+        isMoving: false,
+        path: [],
+        name: `Player ${myUserId.substring(0, 6)}`
+      };
+      setCurrentPlayer(player);
+      console.log('Current player created with user ID:', player);
+      
+      // Process existing members (if any)
+      if (members && members.members) {
+        console.log('Processing existing members:', Object.keys(members.members));
+        Object.keys(members.members).forEach(memberId => {
+          if (memberId !== socketId) {
+            console.log('Adding existing member:', memberId);
+            const memberInfo = members.members[memberId];
+            const existingPlayer: Player = {
+              id: memberId,
+              position: { x: 0, y: 0.5, z: 0 },
+              color: characterColors[memberId.hashCode() % characterColors.length],
+              isMoving: false,
+              path: [],
+              name: memberInfo?.user_info?.name || memberInfo?.name || `Player ${memberId.substring(0, 6)}`
+            };
+            
+            setOtherPlayers(prev => {
+              const newMap = new Map(prev);
+              newMap.set(memberId, existingPlayer);
+              return newMap;
+            });
+          }
         });
+        setMemberCount(members.count || 0);
       }
     });
 
-    // Handle player joined
-    roomChannel.bind('client-player-joined', (data: {
-      playerId: string;
-      playerData: Player;
-    }) => {
-      if (data.playerId !== pusherInstance.connection.socket_id) {
-        console.log('Player joined:', data.playerId);
-        setMemberCount(prev => prev + 1);
+
+    // Handle presence channel member added
+    roomChannel.bind('pusher:member_added', (member: any) => {
+      console.log('🆕 Member added:', member);
+      console.log('🆔 Member ID:', member.id);
+      console.log('ℹ️ Member info:', member.info);
+      console.log('🔗 My socket ID:', pusherInstance.connection.socket_id);
+      
+      const memberId = member.id;
+      if (memberId !== pusherInstance.connection.socket_id) {
+        console.log('✅ Adding new member as player:', memberId);
+        
+        const newPlayer: Player = {
+          id: memberId,
+          position: { x: 0, y: 0.5, z: 0 },
+          color: characterColors[memberId.hashCode() % characterColors.length],
+          isMoving: false,
+          path: [],
+          name: member.info?.user_info?.name || member.info?.name || `Player ${memberId.substring(0, 6)}`
+        };
         
         setOtherPlayers(prev => {
           const newMap = new Map(prev);
-          newMap.set(data.playerId, {
-            ...data.playerData,
-            path: [] // Reset path for new players
-          });
+          newMap.set(memberId, newPlayer);
+          console.log('📊 Updated other players after member added. Size:', newMap.size);
+          console.log('📊 All other players:', Array.from(newMap.entries()));
           return newMap;
         });
       }
     });
 
-    // Handle player left (we'll need to implement this via a heartbeat or timeout)
-    roomChannel.bind('client-player-left', (data: {
-      playerId: string;
-    }) => {
-      if (data.playerId !== pusherInstance.connection.socket_id) {
-        console.log('Player left:', data.playerId);
-        setMemberCount(prev => prev - 1);
+    // Handle presence channel member removed
+    roomChannel.bind('pusher:member_removed', (member: any) => {
+      console.log('Member removed:', member);
+      const memberId = member.id;
+      if (memberId !== pusherInstance.connection.socket_id) {
+        console.log('Removing member:', memberId);
         
         setOtherPlayers(prev => {
           const newMap = new Map(prev);
-          newMap.delete(data.playerId);
+          newMap.delete(memberId);
+          console.log('Updated other players after member removed:', newMap);
           return newMap;
         });
       }
     });
 
-    // Handle player movement
-    roomChannel.bind('client-player-moved', (data: {
+    // Handle player movement (server events)
+    roomChannel.bind('player-moved', (data: {
       playerId: string;
       position: { x: number; y: number; z: number };
       path: { x: number; y: number; z: number }[];
       isMoving: boolean;
     }) => {
+      console.log('📨 Received movement event:', data);
+      console.log('📨 From player:', data.playerId);
+      console.log('📨 My socket ID:', pusherInstance.connection.socket_id);
+      
       if (data.playerId !== pusherInstance.connection.socket_id) {
+        console.log('✅ Processing movement for other player');
         setOtherPlayers(prev => {
           const newMap = new Map(prev);
           const player = newMap.get(data.playerId);
+          
+          console.log('📨 Player found in map:', !!player);
+          
           if (player) {
             player.position = data.position;
             player.isMoving = data.isMoving;
             player.path = data.path.map(p => new Vector3(p.x, p.y, p.z));
+            console.log('✅ Updated player movement:', player);
+          } else {
+            console.warn('⚠️ Player not found in otherPlayers map:', data.playerId);
+            console.warn('⚠️ Available players:', Array.from(newMap.keys()));
           }
+          
           return newMap;
         });
+      } else {
+        console.log('🙅 Ignoring own movement event');
       }
     });
 
     // Handle player stopped
-    roomChannel.bind('client-player-stopped', (data: {
+    roomChannel.bind('player-stopped', (data: {
       playerId: string;
       position: { x: number; y: number; z: number };
     }) => {
       if (data.playerId !== pusherInstance.connection.socket_id) {
+        console.log('Received player stopped:', data);
         setOtherPlayers(prev => {
           const newMap = new Map(prev);
           const player = newMap.get(data.playerId);
@@ -190,37 +283,79 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
     });
 
     return () => {
-      // Announce leaving before disconnecting
-      if (roomChannel && isConnected) {
-        roomChannel.trigger('client-player-left', {
-          playerId: pusherInstance.connection.socket_id
-        });
-      }
+      // Clean up connections
       roomChannel.unbind_all();
-      pusherInstance.unsubscribe('3d-room');
+      pusherInstance.unsubscribe('presence-3d-room');
       pusherInstance.disconnect();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const sendMovement = useCallback((position: Vector3, path: Vector3[]) => {
-    if (channel && isConnected) {
-      channel.trigger('client-player-moved', {
-        playerId: pusher?.connection.socket_id,
+  const sendMovement = useCallback(async (position: Vector3, path: Vector3[]) => {
+    if (pusher && isConnected && currentUserId) {
+      console.log('🚀 Sending movement via API:', { position, path });
+      console.log('🚀 Using user ID:', currentUserId);
+      
+      const movementData = {
+        type: 'move',
+        playerId: currentUserId,  // Use presence channel user ID
+        socketId: pusher.connection.socket_id,  // For excluding sender
         position: { x: position.x, y: position.y, z: position.z },
         path: path.map(p => ({ x: p.x, y: p.y, z: p.z })),
         isMoving: true
-      });
+      };
+      
+      try {
+        const response = await fetch('/api/pusher/movement', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(movementData)
+        });
+        
+        if (response.ok) {
+          console.log('✅ Movement sent via API successfully');
+        } else {
+          console.error('❌ Failed to send movement via API:', response.status);
+        }
+      } catch (error) {
+        console.error('❌ Error sending movement via API:', error);
+      }
+    } else {
+      console.warn('⚠️ Cannot send movement - missing requirements:', { pusher: !!pusher, isConnected, currentUserId });
     }
-  }, [channel, isConnected, pusher]);
+  }, [pusher, isConnected, currentUserId]);
 
-  const sendStop = useCallback((position: Vector3) => {
-    if (channel && isConnected) {
-      channel.trigger('client-player-stopped', {
-        playerId: pusher?.connection.socket_id,
+  const sendStop = useCallback(async (position: Vector3) => {
+    if (pusher && isConnected && currentUserId) {
+      console.log('🛉 Sending stop via API:', { position });
+      
+      const stopData = {
+        type: 'stop',
+        playerId: currentUserId,  // Use presence channel user ID
+        socketId: pusher.connection.socket_id,  // For excluding sender
         position: { x: position.x, y: position.y, z: position.z }
-      });
+      };
+      
+      try {
+        const response = await fetch('/api/pusher/movement', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(stopData)
+        });
+        
+        if (response.ok) {
+          console.log('✅ Stop sent via API successfully');
+        } else {
+          console.error('❌ Failed to send stop via API:', response.status);
+        }
+      } catch (error) {
+        console.error('❌ Error sending stop via API:', error);
+      }
     }
-  }, [channel, isConnected, pusher]);
+  }, [pusher, isConnected, currentUserId]);
 
   const value: PusherContextType = {
     currentPlayer,
