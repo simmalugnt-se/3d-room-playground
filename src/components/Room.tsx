@@ -23,11 +23,6 @@ const SHOW_DEBUG_GRID = true; // Set to true to visualize pathfinding grid
 const Room: React.FC = () => {
   const { currentPlayer, otherPlayers, sendMovement, sendStop, isConnected } = usePusher();
   
-  // Debug logging for multiplayer state
-  console.log('🎮 Room render - Other players count:', otherPlayers.size);
-  console.log('🎮 Room render - Other players:', Array.from(otherPlayers.entries()));
-  console.log('🎮 Room render - Current player:', currentPlayer);
-  console.log('🎮 Room render - Is connected:', isConnected);
   
   const [characterPosition, setCharacterPosition] = useState<Vector3>(new Vector3(0, 0.5, 0));
   const [targetPosition, setTargetPosition] = useState<Vector3 | null>(null);

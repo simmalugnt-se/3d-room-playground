@@ -1,8 +1,0 @@
-{
-  "/_app": "pages/_app.js",
-  "/_error": "pages/_error.js",
-  "/_document": "pages/_document.js",
-  "/": "pages/index.js",
-  "/api/pusher/auth": "pages/api/pusher/auth.js",
-  "/api/pusher/movement": "pages/api/pusher/movement.js"
-}

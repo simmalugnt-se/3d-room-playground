@@ -108,10 +108,6 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
     });
 
     // Handle successful subscription to presence channel  
-    // Debug: Log all incoming events
-    roomChannel.bind_global((eventName: string, data: any) => {
-      console.log('📡 Received event:', eventName, data);
-    });
     
     roomChannel.bind('pusher:subscription_succeeded', (members: any) => {
       console.log('🎉 Successfully subscribed to presence 3D room!');
