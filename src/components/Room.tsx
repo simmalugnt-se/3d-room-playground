@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Vector3 } from 'three';
 import * as PF from 'pathfinding';
-import Character from './Character';
+import SimpleAnimatedCharacter from './SimpleAnimatedCharacter';
 import Obstacles from './Obstacles';
 
 // Shared obstacle definitions to ensure visual and pathfinding sync
@@ -130,8 +130,8 @@ const Room: React.FC = () => {
       {/* Obstacles */}
       <Obstacles />
 
-      {/* Character */}
-      <Character 
+      {/* Simple Animated Character */}
+      <SimpleAnimatedCharacter 
         position={characterPosition}
         path={path}
         isMoving={isMoving}
