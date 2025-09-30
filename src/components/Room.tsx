@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Vector3 } from 'three';
 import * as PF from 'pathfinding';
-import { useSocket } from '../contexts/SocketContext';
+import { usePusher } from '../contexts/PusherContext';
 import SimpleAnimatedCharacter from './SimpleAnimatedCharacter';
 import Obstacles from './Obstacles';
 
@@ -21,7 +21,7 @@ const GRID_SIZE = 60; // Grid resolution for pathfinding (higher for smoother di
 const SHOW_DEBUG_GRID = true; // Set to true to visualize pathfinding grid
 
 const Room: React.FC = () => {
-  const { currentPlayer, otherPlayers, sendMovement, sendStop, isConnected } = useSocket();
+  const { currentPlayer, otherPlayers, sendMovement, sendStop, isConnected } = usePusher();
   
   const [characterPosition, setCharacterPosition] = useState<Vector3>(new Vector3(0, 0.5, 0));
   const [targetPosition, setTargetPosition] = useState<Vector3 | null>(null);

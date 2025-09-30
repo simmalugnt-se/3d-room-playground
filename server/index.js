@@ -6,15 +6,21 @@ const cors = require('cors');
 const app = express();
 const httpServer = createServer(app);
 
-// Enable CORS for the client
+// Enable CORS for the client (support both local dev and production)
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://your-app-name.vercel.app", // Replace with your actual Vercel URL
+  /\.vercel\.app$/ // Allow any Vercel deployment
+];
+
 app.use(cors({
-  origin: "http://localhost:3000",
+  origin: allowedOrigins,
   methods: ["GET", "POST"]
 }));
 
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: allowedOrigins,
     methods: ["GET", "POST"]
   }
 });
@@ -30,6 +36,16 @@ const characterColors = [
 ];
 
 let colorIndex = 0;
+
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: '3D Room Multiplayer Server', 
+    players: players.size,
+    uptime: process.uptime()
+  });
+});
 
 io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);

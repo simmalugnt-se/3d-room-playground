@@ -1,13 +1,13 @@
 import React from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { SocketProvider } from './contexts/SocketContext';
+import { PusherProvider } from './contexts/PusherContext';
 import Room from './components/Room';
 import './App.css';
 
 function App() {
   return (
-    <SocketProvider>
+    <PusherProvider>
       <div className="App" style={{ width: '100vw', height: '100vh' }}>
         <Canvas
           orthographic
@@ -42,7 +42,7 @@ function App() {
           />
         </Canvas>
       </div>
-    </SocketProvider>
+    </PusherProvider>
   );
 }
 
