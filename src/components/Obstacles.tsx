@@ -1,5 +1,5 @@
 import React from 'react';
-import { OBSTACLE_DEFINITIONS } from './Room';
+import { OBSTACLE_DEFINITIONS } from '../utils/pathfinding';
 
 const Obstacles: React.FC = () => {
 

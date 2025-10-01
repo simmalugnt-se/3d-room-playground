@@ -23,29 +23,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     switch (type) {
-      case 'movement-start':
-        await pusher.trigger('presence-3d-room', 'player-movement-start', {
+      case 'move-to-target':
+        await pusher.trigger('presence-3d-room', 'player-move-to-target', {
           playerId,
           startPosition: eventData.startPosition,
           targetPosition: eventData.targetPosition,
-          path: eventData.path, // Include the calculated path
-          velocity: eventData.velocity,
           timestamp: Date.now()
         }, {
           socket_id: socketId  // Exclude the sender from receiving the event
         });
-        console.log('✅ Player movement start event sent (excluding sender)');
+        console.log('✅ Player move-to-target event sent (excluding sender)');
         break;
         
-      case 'movement-stop':
-        await pusher.trigger('presence-3d-room', 'player-movement-stop', {
+      case 'player-stopped':
+        await pusher.trigger('presence-3d-room', 'player-stopped', {
           playerId,
           position: eventData.position,
           timestamp: Date.now()
         }, {
           socket_id: socketId  // Exclude the sender from receiving the event
         });
-        console.log('✅ Player movement stop event sent (excluding sender)');
+        console.log('✅ Player stopped event sent (excluding sender)');
         break;
         
       case 'position-sync':

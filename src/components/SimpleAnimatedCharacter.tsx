@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group } from 'three';
 import { Player } from '../contexts/PusherContext';
+import { calculatePath } from '../utils/pathfinding';
 
 interface SimpleAnimatedCharacterProps {
   position?: Vector3;
@@ -52,15 +53,35 @@ const SimpleAnimatedCharacter: React.FC<SimpleAnimatedCharacterProps> = ({
     }
   }, [effectiveIsMoving, path, effectivePosition, useEventBasedMovement]);
   
-  // Path management for event-based movement
+  // Distributed pathfinding for event-based movement
   useEffect(() => {
-    if (useEventBasedMovement && player && player.isMoving && player.path && player.path.length > 0) {
-      console.log('Starting event-based movement with path:', player.path);
-      setCurrentPathIndex(0);
-      setCurrentPosition(new Vector3(player.position.x, player.position.y, player.position.z));
-      setTargetPosition(player.path[0]);
+    if (useEventBasedMovement && player && player.isMoving && player.targetPosition && (!player.path || player.path.length === 0)) {
+      console.log('🗺️ Calculating path for distributed pathfinding...');
+      const startPos = new Vector3(player.position.x, player.position.y, player.position.z);
+      const targetPos = new Vector3(player.targetPosition.x, player.targetPosition.y, player.targetPosition.z);
+      
+      // Calculate path using shared pathfinding utility
+      const calculatedPath = calculatePath(startPos, targetPos);
+      
+      if (calculatedPath.length > 0) {
+        console.log('✅ Path calculated with', calculatedPath.length, 'waypoints');
+        // Update the player's path with the calculated result
+        player.path = calculatedPath;
+        
+        // Start following the path
+        setCurrentPathIndex(0);
+        setCurrentPosition(startPos);
+        setTargetPosition(calculatedPath[0]);
+      } else {
+        console.warn('⚠️ No path found - moving directly');
+        // Fallback: move directly to target
+        player.path = [targetPos];
+        setCurrentPathIndex(0);
+        setCurrentPosition(startPos);
+        setTargetPosition(targetPos);
+      }
     }
-  }, [useEventBasedMovement, player?.isMoving, player?.path, player?.position, player]);
+  }, [useEventBasedMovement, player?.isMoving, player?.targetPosition, player?.path?.length, player?.position, player]);
 
   // Animation loop
   useFrame((state, delta) => {
