@@ -13,7 +13,7 @@
   },
   "keywords": ["socket.io", "multiplayer", "3d", "game"],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.1.0",

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Vector3 } from 'three';
 import * as PF from 'pathfinding';
 import { usePusher } from '../contexts/PusherContext';
@@ -21,13 +21,36 @@ const GRID_SIZE = 60; // Grid resolution for pathfinding (higher for smoother di
 const SHOW_DEBUG_GRID = true; // Set to true to visualize pathfinding grid
 
 const Room: React.FC = () => {
-  const { currentPlayer, otherPlayers, sendMovement, sendStop, isConnected } = usePusher();
+  const { currentPlayer, otherPlayers, sendMovementStart, sendMovementStop, sendPositionSync, isConnected } = usePusher();
   
   
   const [characterPosition, setCharacterPosition] = useState<Vector3>(new Vector3(0, 0.5, 0));
   const [targetPosition, setTargetPosition] = useState<Vector3 | null>(null);
   const [path, setPath] = useState<Vector3[]>([]);
   const [isMoving, setIsMoving] = useState(false);
+  const [lastSyncedPosition, setLastSyncedPosition] = useState<Vector3>(new Vector3(0, 0.5, 0));
+  
+  // Periodic position sync for drift correction - disabled for now since event-based movement should be accurate
+  // If you experience position drift, you can re-enable this
+  /*
+  useEffect(() => {
+    if (!isConnected) return;
+    
+    const syncInterval = setInterval(() => {
+      // Only sync when not moving and position has actually changed
+      if (!isMoving) {
+        const distance = characterPosition.distanceTo(lastSyncedPosition);
+        if (distance > 0.5) { // Only sync if moved more than 0.5 units since last sync
+          sendPositionSync(characterPosition);
+          setLastSyncedPosition(characterPosition.clone());
+          console.log('📡 Position sync sent - distance moved:', distance.toFixed(2));
+        }
+      }
+    }, 10000); // Check every 10 seconds
+    
+    return () => clearInterval(syncInterval);
+  }, [isConnected, isMoving, characterPosition, lastSyncedPosition, sendPositionSync]);
+  */
 
   // Create pathfinding grid
   const { grid, finder } = useMemo(() => {
@@ -114,9 +137,10 @@ const Room: React.FC = () => {
       setTargetPosition(clampedPoint);
       setIsMoving(true);
       
-      // Send movement to other players
+      // Send event-based movement to other players
       if (isConnected) {
-        sendMovement(characterPosition, worldPath);
+        const velocity = 4; // Match character movement speed
+        sendMovementStart(characterPosition, clampedPoint, worldPath, velocity);
       }
     }
   };
@@ -160,9 +184,10 @@ const Room: React.FC = () => {
           setPath([]);
           if (targetPosition) {
             setCharacterPosition(targetPosition);
+            setLastSyncedPosition(targetPosition.clone()); // Update synced position
             // Send stop event to other players
             if (isConnected) {
-              sendStop(targetPosition);
+              sendMovementStop(targetPosition);
             }
           }
         }}
@@ -174,12 +199,8 @@ const Room: React.FC = () => {
       {Array.from(otherPlayers.values()).map(player => (
         <SimpleAnimatedCharacter
           key={player.id}
-          position={new Vector3(player.position.x, player.position.y, player.position.z)}
-          path={player.path}
-          isMoving={player.isMoving}
-          onMoveComplete={() => {}} // Other players handle their own completion
-          color={player.color}
-          name={player.name}
+          player={player}
+          useEventBasedMovement={true}
         />
       ))}
 

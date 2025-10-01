@@ -7,6 +7,12 @@ export interface Player {
   position: { x: number; y: number; z: number };
   color: string;
   isMoving: boolean;
+  // Event-based movement properties
+  targetPosition?: { x: number; y: number; z: number };
+  velocity?: number;
+  movementStartTime?: number;
+  lastSyncTime?: number;
+  // Legacy path for backward compatibility during transition
   path: Vector3[];
   name: string;
 }
@@ -15,8 +21,10 @@ interface PusherContextType {
   currentPlayer: Player | null;
   otherPlayers: Map<string, Player>;
   isConnected: boolean;
-  sendMovement: (position: Vector3, path: Vector3[]) => Promise<void>;
-  sendStop: (position: Vector3) => Promise<void>;
+  // Event-based movement methods
+  sendMovementStart: (startPosition: Vector3, targetPosition: Vector3, path: Vector3[], velocity: number) => Promise<void>;
+  sendMovementStop: (position: Vector3) => Promise<void>;
+  sendPositionSync: (position: Vector3) => Promise<void>;
   memberCount: number;
 }
 
@@ -24,8 +32,9 @@ const PusherContext = createContext<PusherContextType>({
   currentPlayer: null,
   otherPlayers: new Map(),
   isConnected: false,
-  sendMovement: async () => {},
-  sendStop: async () => {},
+  sendMovementStart: async () => {},
+  sendMovementStop: async () => {},
+  sendPositionSync: async () => {},
   memberCount: 0
 });
 
@@ -222,30 +231,35 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
       }
     });
 
-    // Handle player movement (server events)
-    roomChannel.bind('player-moved', (data: {
+    // Handle player movement start
+    roomChannel.bind('player-movement-start', (data: {
       playerId: string;
-      position: { x: number; y: number; z: number };
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
       path: { x: number; y: number; z: number }[];
-      isMoving: boolean;
+      velocity: number;
+      timestamp: number;
     }) => {
-      console.log('📨 Received movement event:', data);
+      console.log('📨 Received movement start event:', data);
       console.log('📨 From player:', data.playerId);
       console.log('📨 My socket ID:', pusherInstance.connection.socket_id);
       
       if (data.playerId !== pusherInstance.connection.socket_id) {
-        console.log('✅ Processing movement for other player');
+        console.log('✅ Processing movement start for other player');
         setOtherPlayers(prev => {
           const newMap = new Map(prev);
           const player = newMap.get(data.playerId);
           
-          console.log('📨 Player found in map:', !!player);
-          
           if (player) {
-            player.position = data.position;
-            player.isMoving = data.isMoving;
+            player.position = data.startPosition;
+            player.targetPosition = data.targetPosition;
+            player.velocity = data.velocity;
+            player.movementStartTime = data.timestamp;
+            player.isMoving = true;
+            player.lastSyncTime = Date.now();
+            // Set the calculated path for pathfinding-aware movement
             player.path = data.path.map(p => new Vector3(p.x, p.y, p.z));
-            console.log('✅ Updated player movement:', player);
+            console.log('✅ Updated player movement start with path:', player);
           } else {
             console.warn('⚠️ Player not found in otherPlayers map:', data.playerId);
             console.warn('⚠️ Available players:', Array.from(newMap.keys()));
@@ -254,24 +268,77 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
           return newMap;
         });
       } else {
-        console.log('🙅 Ignoring own movement event');
+        console.log('🙅 Ignoring own movement start event');
       }
     });
 
-    // Handle player stopped
-    roomChannel.bind('player-stopped', (data: {
+    // Handle player movement stop
+    roomChannel.bind('player-movement-stop', (data: {
       playerId: string;
       position: { x: number; y: number; z: number };
+      timestamp: number;
     }) => {
       if (data.playerId !== pusherInstance.connection.socket_id) {
-        console.log('Received player stopped:', data);
+        console.log('Received player movement stop:', data);
         setOtherPlayers(prev => {
           const newMap = new Map(prev);
           const player = newMap.get(data.playerId);
           if (player) {
-            player.position = data.position;
+            // Don't immediately overwrite position - let the character component finish its movement
+            // Only update the target position so the character knows where to end up
+            if (player.isMoving && player.targetPosition) {
+              // Update the final target position to ensure accuracy
+              player.targetPosition = data.position;
+            } else {
+              // Player wasn't moving, safe to update position directly
+              player.position = data.position;
+            }
+            
+            // Clear movement state
             player.isMoving = false;
-            player.path = [];
+            player.velocity = undefined;
+            player.movementStartTime = undefined;
+            player.lastSyncTime = Date.now();
+            
+            // Clear path after a short delay to allow movement to complete
+            setTimeout(() => {
+              setOtherPlayers(currentPlayers => {
+                const updatedMap = new Map(currentPlayers);
+                const currentPlayer = updatedMap.get(data.playerId);
+                if (currentPlayer && !currentPlayer.isMoving) {
+                  currentPlayer.path = [];
+                  currentPlayer.targetPosition = undefined;
+                  // Ensure position is set to the final stop position
+                  currentPlayer.position = data.position;
+                }
+                return updatedMap;
+              });
+            }, 100); // Small delay to let character component finish
+            
+            console.log('✅ Player movement stopped, final position will be:', data.position);
+          }
+          return newMap;
+        });
+      }
+    });
+    
+    // Handle position sync for drift correction
+    roomChannel.bind('player-position-sync', (data: {
+      playerId: string;
+      position: { x: number; y: number; z: number };
+      timestamp: number;
+    }) => {
+      if (data.playerId !== pusherInstance.connection.socket_id) {
+        console.log('Received player position sync:', data);
+        setOtherPlayers(prev => {
+          const newMap = new Map(prev);
+          const player = newMap.get(data.playerId);
+          if (player) {
+            // Only sync if not currently moving or if significant drift
+            if (!player.isMoving) {
+              player.position = data.position;
+              player.lastSyncTime = Date.now();
+            }
           }
           return newMap;
         });
@@ -286,18 +353,19 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const sendMovement = useCallback(async (position: Vector3, path: Vector3[]) => {
+  const sendMovementStart = useCallback(async (startPosition: Vector3, targetPosition: Vector3, path: Vector3[], velocity: number) => {
     if (pusher && isConnected && currentUserId) {
-      console.log('🚀 Sending movement via API:', { position, path });
+      console.log('🚀 Sending movement start via API:', { startPosition, targetPosition, path, velocity });
       console.log('🚀 Using user ID:', currentUserId);
       
       const movementData = {
-        type: 'move',
+        type: 'movement-start',
         playerId: currentUserId,  // Use presence channel user ID
         socketId: pusher.connection.socket_id,  // For excluding sender
-        position: { x: position.x, y: position.y, z: position.z },
+        startPosition: { x: startPosition.x, y: startPosition.y, z: startPosition.z },
+        targetPosition: { x: targetPosition.x, y: targetPosition.y, z: targetPosition.z },
         path: path.map(p => ({ x: p.x, y: p.y, z: p.z })),
-        isMoving: true
+        velocity
       };
       
       try {
@@ -310,24 +378,24 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
         });
         
         if (response.ok) {
-          console.log('✅ Movement sent via API successfully');
+          console.log('✅ Movement start sent via API successfully');
         } else {
-          console.error('❌ Failed to send movement via API:', response.status);
+          console.error('❌ Failed to send movement start via API:', response.status);
         }
       } catch (error) {
-        console.error('❌ Error sending movement via API:', error);
+        console.error('❌ Error sending movement start via API:', error);
       }
     } else {
-      console.warn('⚠️ Cannot send movement - missing requirements:', { pusher: !!pusher, isConnected, currentUserId });
+      console.warn('⚠️ Cannot send movement start - missing requirements:', { pusher: !!pusher, isConnected, currentUserId });
     }
   }, [pusher, isConnected, currentUserId]);
 
-  const sendStop = useCallback(async (position: Vector3) => {
+  const sendMovementStop = useCallback(async (position: Vector3) => {
     if (pusher && isConnected && currentUserId) {
-      console.log('🛉 Sending stop via API:', { position });
+      console.log('🛑 Sending movement stop via API:', { position });
       
       const stopData = {
-        type: 'stop',
+        type: 'movement-stop',
         playerId: currentUserId,  // Use presence channel user ID
         socketId: pusher.connection.socket_id,  // For excluding sender
         position: { x: position.x, y: position.y, z: position.z }
@@ -343,12 +411,43 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
         });
         
         if (response.ok) {
-          console.log('✅ Stop sent via API successfully');
+          console.log('✅ Movement stop sent via API successfully');
         } else {
-          console.error('❌ Failed to send stop via API:', response.status);
+          console.error('❌ Failed to send movement stop via API:', response.status);
         }
       } catch (error) {
-        console.error('❌ Error sending stop via API:', error);
+        console.error('❌ Error sending movement stop via API:', error);
+      }
+    }
+  }, [pusher, isConnected, currentUserId]);
+  
+  const sendPositionSync = useCallback(async (position: Vector3) => {
+    if (pusher && isConnected && currentUserId) {
+      console.log('📡 Sending position sync via API:', { position });
+      
+      const syncData = {
+        type: 'position-sync',
+        playerId: currentUserId,  // Use presence channel user ID
+        socketId: pusher.connection.socket_id,  // For excluding sender
+        position: { x: position.x, y: position.y, z: position.z }
+      };
+      
+      try {
+        const response = await fetch('/api/pusher/movement', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(syncData)
+        });
+        
+        if (response.ok) {
+          console.log('✅ Position sync sent via API successfully');
+        } else {
+          console.error('❌ Failed to send position sync via API:', response.status);
+        }
+      } catch (error) {
+        console.error('❌ Error sending position sync via API:', error);
       }
     }
   }, [pusher, isConnected, currentUserId]);
@@ -357,8 +456,9 @@ export const PusherProvider: React.FC<PusherProviderProps> = ({ children }) => {
     currentPlayer,
     otherPlayers,
     isConnected,
-    sendMovement,
-    sendStop,
+    sendMovementStart,
+    sendMovementStop,
+    sendPositionSync,
     memberCount
   };
 
