@@ -40,6 +40,7 @@ const SimpleAnimatedCharacter: React.FC<SimpleAnimatedCharacterProps> = ({
   const [targetPosition, setTargetPosition] = useState<Vector3>(effectivePosition.clone());
   const [interpolatedPosition, setInterpolatedPosition] = useState<Vector3>(effectivePosition.clone());
   const [facingDirection, setFacingDirection] = useState<number>(0);
+  const [hasCompletedMovement, setHasCompletedMovement] = useState<boolean>(false);
   
   const MOVE_SPEED = 4;
 
@@ -59,6 +60,9 @@ const SimpleAnimatedCharacter: React.FC<SimpleAnimatedCharacterProps> = ({
       console.log('🗺️ Calculating path for distributed pathfinding...');
       const startPos = new Vector3(player.position.x, player.position.y, player.position.z);
       const targetPos = new Vector3(player.targetPosition.x, player.targetPosition.y, player.targetPosition.z);
+      
+      // Reset completion flag when starting new movement
+      setHasCompletedMovement(false);
       
       // Calculate path using shared pathfinding utility
       const calculatedPath = calculatePath(startPos, targetPos);
