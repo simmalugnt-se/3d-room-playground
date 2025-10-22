@@ -20,6 +20,7 @@ function Model(props: any) {
   const jumpActionRef = useRef<any>(null);
 
   useEffect(() => {
+    console.log("actions", actions);
     if (actions && actions.jump) {
       // Store the action in ref to avoid modifying hook return value
       jumpActionRef.current = actions.jump;
