@@ -1,7 +1,5 @@
 "use client";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import {
   ScrollControls,
   SoftShadows,
@@ -11,16 +9,31 @@ import {
 } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { EffectComposer, TiltShift2 } from "@react-three/postprocessing";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
-function Model(props) {
+function Model(props: any) {
   const scroll = useScroll();
-  const { nodes, materials, animations } = useGLTF("/jump-transformed.glb");
+  const { nodes, materials, animations } = useGLTF(
+    "/jump-transformed.glb"
+  ) as any;
   const { ref, actions } = useAnimations(animations);
-  useEffect(() => void (actions.jump.reset().play().paused = true), []);
-  useFrame(
-    () => (actions.jump.time = actions.jump.getClip().duration * scroll.offset)
-  );
+  const jumpActionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (actions && actions.jump) {
+      // Store the action in ref to avoid modifying hook return value
+      jumpActionRef.current = actions.jump;
+      jumpActionRef.current.reset().play();
+      jumpActionRef.current.paused = true;
+    }
+  }, [actions]);
+
+  useFrame(() => {
+    if (jumpActionRef.current) {
+      jumpActionRef.current.time =
+        jumpActionRef.current.getClip().duration * scroll.offset;
+    }
+  });
   return (
     <group {...props} ref={ref}>
       <primitive object={nodes.mixamorigHips} />
@@ -68,7 +81,7 @@ export default function ModelTest1() {
         <shadowMaterial transparent opacity={0.75} />
       </mesh>
       <SoftShadows size={40} samples={16} />
-      <EffectComposer disableNormalPass multisampling={4}>
+      <EffectComposer multisampling={4}>
         <TiltShift2 blur={1} />
       </EffectComposer>
     </Canvas>
